@@ -1,24 +1,24 @@
 #!/bin/bash
 
-AMI_ID="ami-09c813fb71547fc4f"
-SG_ID="sg-07c8acf3fa6b923fa" # replace with your SG ID
-ZONE_ID="Z0948150OFPSYTNVYZOY" # replace with your ID
-DOMAIN_NAME="daws86s.fun"
+USERID=$(id -u)
+R="\e[31m"
+G="\e[32m"
+Y="\e[33m"
+N="\e[0m"
 
-for instance in $@ # mongodb redis mysql
-do
-    INSTANCE_ID=$(aws ec2 run-instances --image-id $AMI_ID --instance-type t3.micro --security-group-ids $SG_ID --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$instance}]" --query 'Instances[0].InstanceId' --output text)
+LOGS_FOLDER="/var/log/shell-roboshop"
+SCRIPT_NAME=$( echo $0 | cut -d "." -f1 )
+LOG_FILE="$LOGS_FOLDER/$SCRIPT_NAME.log" # /var/log/shell-script/16-logs.log
 
-    # Get Private IP
-    if [ $instance != "frontend" ]; then
-        IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PrivateIpAddress' --output text)
-        RECORD_NAME="$instance.$DOMAIN_NAME" # mongodb.daws86s.fun
-    else
-        IP=$(aws ec2 describe-instances --instance-ids $INSTANCE_ID --query 'Reservations[0].Instances[0].PublicIpAddress' --output text)
-        RECORD_NAME="$DOMAIN_NAME" # daws86s.fun
-    fi
+mkdir -p $LOGS_FOLDER
+echo "Script started executed at: $(date)" | tee -a $LOG_FILE
 
-    VALIDATE(){ # functions receive inputs through args just like shell script args
+if [ $USERID -ne 0 ]; then
+    echo "ERROR:: Please run this script with root privelege"
+    exit 1 # failure is other than 0
+fi
+
+VALIDATE(){ # functions receive inputs through args just like shell script args
     if [ $1 -ne 0 ]; then
         echo -e "$2 ... $R FAILURE $N" | tee -a $LOG_FILE
         exit 1
@@ -37,4 +37,10 @@ systemctl enable mongod &>>$LOG_FILE
 VALIDATE $? "Enable MongoDB"
 
 systemctl start mongod 
-VALIDATE $? "Start MongoDB";
+VALIDATE $? "Start MongoDB"
+
+sed -i 's/127.0.0.1/0.0.0.0/g' /etc/mongod.conf
+VALIDATE $? "Allowing remote connections to MongoDB"
+
+systemctl restart mongod
+VALIDATE $? "Restarted MongoDB"
